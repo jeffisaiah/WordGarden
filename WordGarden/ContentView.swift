@@ -6,17 +6,26 @@
 //
 
 import SwiftUI
+import AVFAudio
 
 struct ContentView: View {
+    private static let maximumGuesses = 8
+    
     @State private var wordsGuessed = 0
     @State private var wordsMissed = 0
-    @State private var wordsToGuess = ["SWIFT","DOG","CAT"]
-    @State private var gameStatusString = "How Many Guesses to Uncover the Hidden Word?"
-    @State private var currentWord = 0
+    @State private var gameStatusMessage = "How Many Guesses to Uncover the Hidden Word?"
+    @State private var currentWordIndex = 0
+    @State private var wordToGuess = ""
+    @State private var revealedWord = ""
+    @State private var lettersGuessed = ""
     @State private var guessedLetter = ""
     @State private var imageName = "flower8"
     @State private var playAgainHidden = true
+    @State private var playAgainButtonLabel = "Another Word?"
+    @State private var guessesRemaining = maximumGuesses
+    @State private var audioPlayer: AVAudioPlayer!
     @FocusState private var textFieldIsFocused: Bool
+    private let wordsToGuess = ["SWIFT","DOG","CAT"]
     var body: some View {
         VStack {
             HStack {
@@ -32,11 +41,16 @@ struct ContentView: View {
                 
             }
             
+            .padding(.horizontal)
             Spacer()
-            Text(gameStatusString)
+            
+            Text(gameStatusMessage)
                 .font(.title)
                 .multilineTextAlignment(.center)
-            Text("_ _ _ _ _")
+                .frame(height: 80)
+                .minimumScaleFactor(0.5)
+                .padding()
+            Text(revealedWord)
                 .font(.title)
             
             if playAgainHidden{
@@ -61,17 +75,38 @@ struct ContentView: View {
                             guessedLetter = String(lastChar).uppercased()
                         }
                         .focused($textFieldIsFocused)
+                        .onSubmit {
+                            guard guessedLetter != "" else {
+                                return
+                            }
+                            guessALetter()
+                            updateGamePlay()
+                        }
                     Button("Guess a Letter:") {
-                        //TODO: Guess a Letter button action here
-                        playAgainHidden = false
-                        textFieldIsFocused = false
+                        guessALetter()
+                        updateGamePlay()
                     }
                     .buttonStyle(.bordered)
                     .tint(.mint)
                     .disabled(guessedLetter.isEmpty)
                 }
             } else{
-                Button("Another Word?"){
+                Button(playAgainButtonLabel){
+                    
+                    if currentWordIndex == wordsToGuess.count {
+                        currentWordIndex = 0
+                        wordsGuessed = 0
+                        wordsMissed = 0
+                        playAgainButtonLabel = "Another Word?"
+                        
+                    }
+                    wordToGuess = wordsToGuess[currentWordIndex]
+                    revealedWord = "_" + String(repeating: " _", count:
+                    wordToGuess.count - 1)
+                    lettersGuessed = ""
+                    guessesRemaining = Self.maximumGuesses
+                    imageName = "flower\(guessesRemaining)"
+                    gameStatusMessage = "How Many Guesses to Uncover the Hidden Word?"
                     playAgainHidden = true
                 }
                 .buttonStyle(.borderedProminent)
@@ -82,9 +117,75 @@ struct ContentView: View {
                 Image(imageName)
                     .resizable()
                     .scaledToFit()
+                    .animation(.easeIn(duration: 0.75), value: imageName)
         }
         .ignoresSafeArea(edges: .bottom)
+        .onAppear {
+            wordToGuess = wordsToGuess[currentWordIndex]
+            revealedWord = "_" + String(repeating: " _", count:
+            wordToGuess.count - 1)
+        }
     }
+    func guessALetter(){
+        textFieldIsFocused = false
+        lettersGuessed = lettersGuessed + guessedLetter
+        revealedWord = wordToGuess.map{ letter in lettersGuessed.contains(letter) ? "\(letter)" : "_"}.joined(separator: " ")
+        guessedLetter = ""
+    }
+    func updateGamePlay(){
+        if !wordToGuess.contains(guessedLetter){
+            guessesRemaining -= 1
+            
+            imageName = "wilt\(guessesRemaining)"
+            playSound(soundName: "incorrect")
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.75) {
+                imageName = "flower\(guessesRemaining)"
+            }
+        } else {
+            playSound(soundName: "correct")
+        }
+        
+        if !revealedWord.contains("_") {
+            gameStatusMessage = "You Guessed It! It Took You \(lettersGuessed.count) Guesses to Guess the Word."
+            wordsGuessed += 1
+            currentWordIndex += 1
+            playAgainHidden = false
+            playSound(soundName: "word-guessed")
+        } else if guessesRemaining == 0{
+            gameStatusMessage = "So Sorry, You're All Out of Guesses"
+            wordsMissed += 1
+            currentWordIndex += 1
+            playAgainHidden = false
+            playSound(soundName: "word-not-guessed")
+        } else {
+            gameStatusMessage = "You've Made \(lettersGuessed.count) Guess\(lettersGuessed.count == 1 ? "" : "es")"
+        }
+        if currentWordIndex == wordsToGuess.count{
+            currentWordIndex = 0
+            playAgainButtonLabel = "Restart Game?"
+            gameStatusMessage = gameStatusMessage + "\nYou've Tried All the Words, Try Again?"
+        }
+        
+        guessedLetter = ""
+    }
+    
+    func playSound (soundName: String) {
+        if audioPlayer != nil && audioPlayer.isPlaying{
+            audioPlayer.stop()
+        }
+        
+        guard let soundFile = NSDataAsset(name: soundName) else {
+            print("😈 Could not read file name \(soundName)")
+            return
+        }
+        do {
+            audioPlayer = try AVAudioPlayer(data: soundFile.data)
+            audioPlayer.play()
+        } catch {
+            print("😈 ERROR: \(error.localizedDescription) createding audioPlayer")
+        }
+    }
+
 }
 
 #Preview {
